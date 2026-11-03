@@ -1,0 +1,6 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks-system  # uses the installed gitleaks (Fedora package)
+        pass_filenames: false  # upstream gitleaks-system omits this; filenames make gitleaks exit with usage
