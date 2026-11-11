@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-11-11
+
+### Added
+- A stat that is too wide for the display is broken after its `:` and takes two lines; pages are filled as the stats are read
+- Requirements, step-by-step installation and the udev rule for keyboard permissions in the README
+- `setuptools` in `requirements.txt`: GPUtil needs `distutils`, which Python 3.12+ only has through setuptools, so NVIDIA GPU temperature was silently missing on a clean install
+- ruff lint (`ruff.toml`, pre-commit hook)
+
+### Changed
+- `mem_used`, `mem_free` and `mem_total` are shown in GiB with one decimal (were MiB)
+
+### Fixed
+- The image page was never shown: the image was loaded before the display size was known, and the error was swallowed
+- The display is blanked on SIGTERM as well as SIGINT, so stopping the systemd service no longer leaves the last page on it
+- Sample service: removed `After=systemd-udev-settle.service`, which does nothing in a user unit
+
+---
+
 ## 2026-06-17
 
 ### Added

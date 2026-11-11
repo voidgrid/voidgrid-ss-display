@@ -11,11 +11,69 @@ A Python utility for displaying system stats and GIF animations on the OLED scre
 - Apex Pro
 - Apex 5
 
+## Requirements
+
+- Linux (the sensors read `/proc` and `/sys`, and the display is driven over `hidraw`).
+- Python 3 with `pip` (tested on Python 3.14).
+- The hidapi library:
+
+  ```bash
+  sudo dnf install hidapi              # Fedora
+  sudo apt install libhidapi-hidraw0   # Debian, Ubuntu
+  ```
+
+- Permission to write to the keyboard (see [Keyboard permissions](#keyboard-permissions)).
+- For NVIDIA GPU temperature: the NVIDIA driver's `nvidia-smi`.
+
 ## Installation
 
-```bash
-pip install -r requirements.txt
+1. Get the code:
+
+   ```bash
+   git clone https://github.com/voidgrid/voidgrid-ss-display.git ss-display
+   cd ss-display
+   ```
+
+2. Install the Python packages for your user:
+
+   ```bash
+   pip install --user -r requirements.txt
+   ```
+
+   If pip refuses with `externally-managed-environment` (Debian, Ubuntu), use a virtual environment instead:
+
+   ```bash
+   python3 -m venv .venv
+   .venv/bin/pip install -r requirements.txt
+   ```
+
+   Then run it with `.venv/bin/python ss-display.py`, and use that interpreter's full path in place of
+   `/usr/bin/python3` in the service and `.desktop` files.
+
+3. Set up [Keyboard permissions](#keyboard-permissions).
+4. Edit `config.yaml`, then run it (see [Usage](#usage)).
+
+## Keyboard permissions
+
+The display is written to through the keyboard's `/dev/hidraw*` device, which only root can open by default.
+Add a udev rule that gives it to whoever is logged in at the machine. Create
+`/etc/udev/rules.d/70-ss-display.rules` (the number must be lower than 73) with:
+
 ```
+# Let the logged-in user write to the OLED on SteelSeries Apex 7, 7 TKL, Pro and 5 keyboards
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1612|1618|1610|161c", TAG+="uaccess"
+```
+
+Then load it and apply it to the keyboard that is already plugged in:
+
+```bash
+sudo udevadm control --reload
+sudo udevadm trigger --subsystem-match=hidraw
+```
+
+For another keyboard (the `device:` section of `config.yaml`), put its own vendor and product IDs in the rule,
+as four hex digits without `0x`. Without the rule the script cannot open the
+keyboard unless it runs as root.
 
 ## Usage
 
@@ -27,7 +85,7 @@ Configure which sensors to show in `config.yaml`, then run:
 python3 ss-display.py
 ```
 
-Enabled sensors are grouped into pages of 3 (font size 12) or 4 (font size 10) lines and rotate automatically on the configured delay. An image or GIF can also be added as a rotating page — `W.gif` is included as an example.
+Enabled sensors are grouped into pages of 3 (font size 12) or 4 (font size 10) lines and rotate automatically on the configured delay. A stat that is too wide for the display is broken after its `:` and takes two lines. An image or GIF can also be added as a rotating page — `W.gif` is included as an example.
 
 ## Configuration
 
@@ -57,9 +115,9 @@ Set any sensor to `true` to enable it. Sensors are displayed in the order listed
 | `cpu_freq` | Current CPU frequency (MHz) |
 | `cpu_max` | Maximum CPU frequency (MHz) |
 | `cpu_count` | CPU core count |
-| `mem_used` | Memory used (MiB) |
-| `mem_free` | Memory free (MiB) |
-| `mem_total` | Total memory (MiB) |
+| `mem_used` | Memory used (GiB) |
+| `mem_free` | Memory free (GiB) |
+| `mem_total` | Total memory (GiB) |
 | `mem_used_percent` | Memory used % |
 | `swap` | Swap used (MiB) |
 | `swap_percent` | Swap used % |
@@ -90,7 +148,7 @@ python3 -c "import psutil; [print(k, [(e.label, e.current) for e in v]) for k,v 
 
 ## Running as a service
 
-A sample systemd user service is included. Update `WorkingDirectory` to match your install path:
+A sample systemd user service is included. Update `WorkingDirectory` to match your install path. It does not wait for the keyboard: if the keyboard is not there yet the script exits and systemd starts it again five seconds later. Stopping the service blanks the display.
 
 ```bash
 cp ss-display.service ~/.config/systemd/user/
@@ -111,6 +169,24 @@ cp ss-display.desktop ~/.local/share/applications/
 ```
 
 ## Changelog
+
+### 2026-11-11
+
+#### Added
+- A stat that is too wide for the display is broken after its `:` and takes two lines; pages are filled as the stats are read
+- Requirements, step-by-step installation and the udev rule for keyboard permissions in the README
+- `setuptools` in `requirements.txt`: GPUtil needs `distutils`, which Python 3.12+ only has through setuptools, so NVIDIA GPU temperature was silently missing on a clean install
+- ruff lint (`ruff.toml`, pre-commit hook)
+
+#### Changed
+- `mem_used`, `mem_free` and `mem_total` are shown in GiB with one decimal (were MiB)
+
+#### Fixed
+- The image page was never shown: the image was loaded before the display size was known, and the error was swallowed
+- The display is blanked on SIGTERM as well as SIGINT, so stopping the systemd service no longer leaves the last page on it
+- Sample service: removed `After=systemd-udev-settle.service`, which does nothing in a user unit
+
+---
 
 ### 2026-06-17
 

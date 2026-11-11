@@ -131,16 +131,16 @@ def swap_percent():
     return _swap_memory()[3]
 
 def mem_free():
-    return round(_virtual_memory()[1]/1048576)
+    return round(_virtual_memory()[1]/1073741824, 1)
 
 def mem_used():
-    return round(_virtual_memory()[3]/1048576)
+    return round(_virtual_memory()[3]/1073741824, 1)
 
 def mem_used_percent():
     return _virtual_memory()[2]
 
 def mem_total():
-    return round(_virtual_memory()[0]/1048576)
+    return round(_virtual_memory()[0]/1073741824, 1)
 
 def cpu_percent():
     return psutil.cpu_percent(interval=1)
@@ -188,9 +188,10 @@ def get_local_disk_sensors():
         mount = part.mountpoint
         label = os.path.basename(mount) or '/'
         fmt = "{}: {{:.0f}}%".format(label)
-        # m=mount captures the current value of mount; without it, all lambdas
+        # m=mount captures the current value of mount; without it, all functions
         # would close over the same variable and return data for the last mount only.
-        fn = lambda m=mount: psutil.disk_usage(m).percent if os.path.ismount(m) else None
+        def fn(m=mount):
+            return psutil.disk_usage(m).percent if os.path.ismount(m) else None
         sensors.append((fmt, fn))
     return sensors
 
@@ -238,5 +239,3 @@ def draw_text_4(draw, font, stat_one, stat_two, stat_three, stat_four):
     draw.text((1, 11), stat_two,   font=font, fill=255)
     draw.text((1, 21), stat_three, font=font, fill=255)
     draw.text((1, 31), stat_four,  font=font, fill=255)
-
-        

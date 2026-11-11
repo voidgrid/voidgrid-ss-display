@@ -6,8 +6,6 @@ import os
 import signal
 import sys
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
 from functions import (
     init_config, getdevice,
     cpu_percent, cpu_freq, cpu_max, cpu_count,
@@ -22,10 +20,16 @@ from functions import (
     draw_init, draw_text_3, draw_text_4,
 )
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
 config = init_config(os.path.join(SCRIPT_DIR, 'config.yaml'))
 appearance = config.get('appearance') or {}
 sensors = config.get('sensors') or {}
 device_cfg = config.get('device') or {}
+
+report_id = int(device_cfg.get('report_id', 0x61))
+oled_width  = int(device_cfg.get('width',  128))
+oled_height = int(device_cfg.get('height',  40))
 
 font_file = os.path.join(SCRIPT_DIR, appearance.get('font') or 'SpaceMono-Regular.ttf')
 font_size = appearance.get('size') or 12
@@ -43,9 +47,9 @@ SENSOR_MAP = [
     ('cpu_freq',         'CPU Freq: {:.0f}MHz',   cpu_freq),
     ('cpu_max',          'CPU Max: {:.0f}MHz',    cpu_max),
     ('cpu_count',        'CPU cores: {}',         cpu_count),
-    ('mem_used',         'Mem: {}MiB',            mem_used),
-    ('mem_free',         'MemFree: {}MiB',        mem_free),
-    ('mem_total',        'MemTotal: {}MiB',       mem_total),
+    ('mem_used',         'Mem: {}GiB',            mem_used),
+    ('mem_free',         'MemFree: {}GiB',        mem_free),
+    ('mem_total',        'MemTotal: {}GiB',       mem_total),
     ('mem_used_percent', 'Mem: {}%',              mem_used_percent),
     ('swap',             'Swap: {}MiB',           swap_use),
     ('swap_percent',     'Swap: {}%',             swap_percent),
@@ -77,10 +81,9 @@ if image_path:
 
 dev = getdevice(device_cfg)
 
-report_id = int(device_cfg.get('report_id', 0x61))
-oled_width  = int(device_cfg.get('width',  128))
-oled_height = int(device_cfg.get('height',  40))
+_pixel_bytes = (oled_width * oled_height) // 8
 
+# Blank the display and exit. SIGINT is Ctrl-C; SIGTERM is what systemd sends on stop.
 def signal_handler(sig, frame):
     try:
         dev.send_feature_report(bytearray([report_id] + [0x00] * (_pixel_bytes + 1)))
@@ -91,6 +94,7 @@ def signal_handler(sig, frame):
         sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 if sys.stdout.isatty():
     print("Press Ctrl-C to exit.\n")
@@ -101,8 +105,6 @@ im = Image.new('1', (oled_width, oled_height))
 draw = ImageDraw.Draw(im)
 font = ImageFont.truetype(font_file, font_size)
 
-_pixel_bytes = (oled_width * oled_height) // 8
-
 # HID feature report: 1 byte report ID + pixel data + 1 byte terminator
 def send_frame():
     dev.send_feature_report(bytearray([report_id]) + im.tobytes() + bytearray([0x00]))
@@ -110,26 +112,48 @@ def send_frame():
 def blank():
     dev.send_feature_report(bytearray([report_id] + [0x00] * (_pixel_bytes + 1)))
 
-pages = [enabled[i:i + lines_per_page] for i in range(0, len(enabled), lines_per_page)]
+# Text starts 1px in from the left edge.
+text_width = oled_width - 1
+
+# A stat that is too wide for the display is broken after its first ':' and takes two lines.
+def layout(text):
+    if ':' not in text or font.getlength(text) <= text_width:
+        return [text]
+    label, value = text.split(':', 1)
+    return [label + ':', value.strip()]
+
+def read(sensor):
+    fmt, fn = sensor
+    val = fn()
+    return layout(fmt.format(val)) if val is not None else [""]
+
+def show(lines):
+    lines = lines + [""] * (lines_per_page - len(lines))
+    draw_init(draw, oled_width, oled_height)
+    draw_fn(draw, font, *lines[:lines_per_page])
+    send_frame()
+    sleep(delay)
+    blank()
+    sleep(0.05)  # brief pause to let the HID report complete before the next send
 
 while True:
     if not enabled and not image_frames:
         sleep(delay)
         continue
 
-    for page in pages:
-        draw_init(draw, oled_width, oled_height)
-        lines = []
-        for fmt, fn in page:
-            val = fn()
-            lines.append(fmt.format(val) if val is not None else "")
-        while len(lines) < lines_per_page:
-            lines.append("")
-        draw_fn(draw, font, *lines)
-        send_frame()
-        sleep(delay)
-        blank()
-        sleep(0.05)  # brief pause to let the HID report complete before the next send
+    # Pages are filled as the stats are read, because how many lines a stat takes depends on its value.
+    lines = []
+    i = 0
+    while i < len(enabled):
+        new = read(enabled[i])
+        if lines and len(lines) + len(new) > lines_per_page:
+            show(lines)
+            lines = []
+            continue  # read this stat again for the next page, so its value is not a page old
+        lines.extend(new)
+        i += 1
+    if lines:
+        show(lines)
 
     if image_frames:
         end = monotonic() + delay

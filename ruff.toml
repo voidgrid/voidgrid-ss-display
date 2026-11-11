@@ -1,0 +1,5 @@
+# Lint only: pyflakes (F) plus the PEP 8 checks from pycodestyle (E, W).
+line-length = 120
+
+[lint]
+select = ["E", "W", "F"]

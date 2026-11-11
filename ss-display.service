@@ -1,7 +1,7 @@
 [Unit]
 Description=SteelSeries OLED display stats
-# Wait for the HID device to be available
-After=systemd-udev-settle.service
+# No ordering on the keyboard: a user unit cannot wait for a system unit or device.
+# If the keyboard is not ready yet the script exits non-zero and Restart= tries again.
 
 [Service]
 Type=simple
